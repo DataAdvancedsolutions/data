@@ -1,0 +1,1450 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Inspection de structure par Delta Drone</title>
+		<link rel="icon" href="img/dd-radar-plot.gif" type="image/gif" sizes="32x32">
+		<style>html {
+    font-family:Arial,"Sans serif";
+    height: 100%;
+}
+body {
+    padding:0;
+    margin:0;
+    height: 100%;
+    border:0 none;
+}
+#ContentContainer {
+    width: 100%; position:relative;
+}
+#sidebar {
+    width: 200px;
+    height: 100%;
+    position:absolute;
+    background-color:white;
+    bottom:0;
+}
+#svgInspector {
+    padding-left:200px;
+    background-color:#ddd;
+}
+#picInspector {
+    position : absolute;
+    top:0px;
+    left:0px;
+    width:100%;
+    height:100%;
+    display:none;
+    z-index:8;
+}
+.micro { width:40px; border:1px solid white;}
+.oneCharIcon {
+    width:20px;height:20px;
+    background-color:lightgray;border-radius:10px;display:inline-block;text-align:center;line-height:20px;font-size:130%;border:1px solid gray;
+}
+.r {
+    float:right;
+}
+.fl {
+    float:left;
+}
+.a {
+    cursor : pointer;
+}
+.boxBody {
+    overflow:hidden;
+    height:100px;
+}
+.boxTitle {
+    background:#bbb;
+    height:14px;
+    padding:1px;
+    color:#fff;
+    font-weight:bold;
+}
+.box {
+    border:1px solid #bbb;
+    font-size:12px;
+}
+.hoverGroup {
+    cursor: pointer;
+}
+.annotationWarning {
+    display:inline-block;
+    padding:2px 4px;
+    margin:-6px 6px;
+    color:white;
+    font-weight:bold;
+    border-radius:6px;
+}
+#boxInfo {
+    height:130px;
+}
+#navigator {
+    background:white;
+    width:200px;
+    height:200px;
+}
+#navigatorPlot {
+    position:absolute;
+    z-index:4;
+    height:20px;
+    width:20px;
+}
+#btnCommandNext, #btnCommandPrev
+{
+    position:absolute;
+    top:64px;
+    left:0px;
+    z-index:12;
+}
+img{
+    -khtml-user-select: none;
+    -o-user-select: none;
+    -moz-user-select: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+.plot
+{
+    position:absolute;
+    z-index:4;
+    height:20px;
+    width:20px;
+    border-radius:10px;
+    cursor: pointer; cursor: hand;
+    color:white;
+}
+.plot:hover {
+    opacity:1;
+}
+.blue,.red,.green,.orange
+{
+    opacity:0.65;
+    border:3px solid #fff;
+}
+.blue
+{
+    background-color:blue;
+}
+.red
+{
+    background-color:red;
+}
+.green
+{
+    background-color:#1a0;
+}	
+.orange
+{
+    background-color:orange;
+}
+.imgPlot
+{
+    position:absolute;
+    z-index:2;
+    height:200px;
+    width:200px;
+}
+#tooltip
+{
+    position : absolute;
+    width:202px;
+    min-height:202px;
+    border:1px solid black;
+    margin:0;
+    padding:0;
+    background:lightgray;
+    display:none;
+    z-index:1800;
+    font-size:12px;
+}
+#mapBrowser {
+    text-align:center;
+}
+#documentMenuPanel {
+    position:absolute;
+    top:0;
+    left:0;
+    z-index:4;
+    width:200px;
+    height:420px;
+}
+#documentMenuPanel > div {
+    background:#fafafa;
+    border:1px solid lightgray;
+    margin:10px 0 10px 0;
+    padding:10px 10px 10px 0;
+    border-radius:10px;
+    text-align:center;
+    font-size:11px;
+}
+th,.light {
+    font-weight:normal;
+    color:gray;
+    text-align:right;
+}
+th.cool {
+    text-align:center;
+    padding:12px;
+}
+td { text-align:left;
+}</style>
+		<script src="data/metadata.js"></script>
+		<script src="data/siteData.js"></script>
+		<script src="data/annotation.js"></script>
+		<script>"use strict";
+// (c) Delta Drone 2017-2019
+var NSxlink = 'http://www.w3.org/1999/xlink';
+var windowHeight, windowWidth;
+var bMouseDown = false;
+var bSetAnnotation = false;
+var bSettingAnnotation = false;
+var mouseLastX, mouseLastY;
+var svgImg;
+var oldZoom = 0;
+var svgDimensions;
+var selectionRectangles = new Array();
+var thImages = new Array();
+var currentPictureIndex = null;
+var fovImage = new Image();
+fovImage.src = 'img/FOV000.png';
+var fovImageHover = new Image();
+fovImageHover.src = 'img/FOV000-hover.png';
+var siteURL = "../../../../";
+if (!document.location.host) { // local file opened
+    siteURL = "https://cloud.deltadrone.com/tools/OrangeProcessing/";
+}
+var relativePathToImages = "";
+var nomPrenomUser;
+var appParams = { annotationStrokeWidth: 5 };
+
+function init() {
+    document.getElementById("nomSite").innerHTML = metadata["site"].siteName;
+    document.getElementById("siteLegend").innerHTML = metadata["site"].siteName;
+    document.getElementById("loading").style.display = "none";
+
+    var d = new Date();
+    document.getElementById("annotationsFormDate").value = d.getUTCFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2);
+    var r = new XMLHttpRequest();
+    r.open("GET", siteURL + "../OrangeProcessing/__getDDCISUserInfo.php", true);
+    r.onreadystatechange = function () {
+        if (r.readyState != 4 || r.status != 200) return;
+        document.getElementById("annotationsFormAuteur").value = nomPrenomUser = r.responseText;
+    };
+    r.send();
+
+    setTimeout(function () {
+        createPlots(true);
+        var listElt = document.getElementById("divListImages");
+        if (listElt) {
+            var imagesMetadata = metadata["images"];
+            var html = "";
+            var microVuesHTML = "";
+            var displayed = 0;
+            for (var i = 0; i < imagesMetadata.length; i++) {
+                var image = imagesMetadata[i];
+                if (!image.deleted) {
+                    html += "<div class='fl'><img onclick='initInspector(null," + i + ");' src='images/th/" + image["filename"] + "' alt='" + image["filename"] + "'></td><td>"
+                        + makeImageInfoTable(image, false) + "</div>";
+                    if (displayed < 8) {
+                        microVuesHTML += "<img src='images/th/" + image["filename"] + "' class='micro'>";
+                        displayed++;
+                    }
+                }
+            }
+            html += "</table>";
+            listElt.innerHTML = html;
+            document.getElementById("microVues").innerHTML = microVuesHTML;
+        }
+    }, 10);
+}
+
+function initInspector(event, index) {
+    var picInspector = document.getElementById("picInspector");
+    if (!picInspector) return;
+    svgDimensions = getSVGDimensions();
+    var svgInspector = document.getElementById("svgInspector");
+    svgImg = document.getElementById("inspImg");
+    windowHeight = window.innerHeight;
+    windowWidth = window.innerWidth;
+    svgInspector.style.height = windowHeight + "px";
+
+    picInspector.style.display = "block";
+    currentPictureIndex = index;
+    if (event && currentPictureIndex == null)
+        currentPictureIndex = event.target.data["index"];
+    showInspector(currentPictureIndex);
+}
+function displayListVues() {
+    document.getElementById("divListImages").style.display = "block";
+    document.getElementById("divListAnnotations").style.display = "none";
+    document.getElementById("divPlanMasse").style.display = "none";
+    document.getElementById("divPlanElevation").style.display = "none";
+}
+
+function imageToScreenPosition(xImage, yImage) {
+    var imageNaturalSize = getImageNaturalSize();
+    var imageDisplaySize = getImageDisplaySize();
+    var zoomRatio = imageNaturalSize.w / imageDisplaySize.w;
+    var offsetImage = getImgPos();
+    var xScreen = (xImage / zoomRatio) + offsetImage.x;
+    var yScreen = (yImage / zoomRatio) + offsetImage.y;
+    return { "x": parseInt(xScreen), "y": parseInt(yScreen) };
+}
+
+function screenToImagePosition(xScreen, yScreen) {
+    var imageNaturalSize = getImageNaturalSize();
+    var imageDisplaySize = getImageDisplaySize();
+    var zoomRatio = imageNaturalSize.w / imageDisplaySize.w;
+    var offsetImage = getImgPos();
+    var xImage = (xScreen - offsetImage.x) * zoomRatio;
+    var yImage = (yScreen - offsetImage.y) * zoomRatio;
+    return { "x": parseInt(xImage), "y": parseInt(yImage) };
+}
+
+function updateZoom(zoom) {
+    if (!svgImg) return;	// inspector is not active
+
+    var svgDimensions = getSVGDimensions();
+    var imageSize = getImageNaturalSize();
+    var ratio = imageSize.w / imageSize.h;
+
+    // calcul nouvelle taille
+    var imageZoomWidth = svgDimensions.w + ((imageSize.w - svgDimensions.w) * zoom / 100);
+    var imageZoomHeight = imageZoomWidth / ratio;
+    if (zoom == 0 && imageZoomHeight > svgDimensions.h) {
+        imageZoomHeight = svgDimensions.h
+        imageZoomWidth = ratio * imageZoomHeight
+    }
+
+    // affectation nouvelle taille
+    svgImg.setAttribute('width', parseInt(imageZoomWidth + 'px'));
+    svgImg.setAttribute('height', parseInt(imageZoomHeight + 'px'));
+
+    // recentrage
+    var offsetImage = getImgPos();
+    setImgPos(offsetImage.x - (zoom - oldZoom) * 15, offsetImage.y - (zoom - oldZoom) * 15);
+
+    // mise à jour du frustum 2D
+    setTimeout(function () {
+        updateFrustum(zoom);
+    }, 100);
+
+    // mise à jour de l'UI
+    var zoomCursor = document.getElementById("zoomCursor");
+    if (zoomCursor.value != zoom)
+        zoomCursor.value = zoom;
+    oldZoom = zoom;
+    hide();
+}
+
+function updateFrustum(zoom) {
+    var viewFrustum = document.getElementById("viewFrustum");
+    var boxThumbBody = document.getElementById("boxThumbBody");
+    var thW = parseInt(boxThumbBody.clientWidth);
+    var thH = parseInt(boxThumbBody.clientHeight);
+    var imgProps = getImageNaturalSize();
+    var w, h;
+    var thX, thY;
+    if (zoom == 0) {
+        var borderWidth = 2;
+        w = (thW - borderWidth * 2);
+        h = (thH - borderWidth * 2);
+        thX = w / 2;
+        thY = h / 2;
+    }
+    else {
+        var pos = getImgPos();
+        var svgDimensions = getSVGDimensions();
+        var imgDisplaySize = getImageDisplaySize();
+        w = parseInt(svgDimensions.w / imgDisplaySize.w * thW);
+        h = parseInt(svgDimensions.h / imgDisplaySize.h * thH);
+        thX = -pos.x / imgDisplaySize.w * thW + w / 2;
+        thY = -pos.y / imgDisplaySize.h * thH + h / 2;
+    }
+    viewFrustum.style.left = parseInt(thX - w / 2) + "px";
+    viewFrustum.style.top = parseInt(thY - h / 2) + "px";
+    viewFrustum.style.width = w + "px";
+    viewFrustum.style.height = h + "px";
+}
+
+function goPrev() {
+    var n = metadata["images"].length;
+    for (var c = currentPictureIndex - 1; c != currentPictureIndex; c--) {
+        if (c < 0)
+            c = n - 1;
+        var image = getImage(c);
+        if (image.deleted) continue;
+        showInspector(c);
+        break;
+    }
+}
+
+function goNext() {
+    var n = metadata["images"].length;
+    for (var c = currentPictureIndex + 1; c != currentPictureIndex; c++) {
+        if (c == n)
+            c = 0;
+        var image = getImage(c);
+        if (image.deleted) continue;
+        showInspector(c);
+        break;
+    }
+}
+
+function setThumbView(imageInfo) {
+    var thumbnailVueBox = document.getElementById("thumbnailVueBox");
+    thumbnailVueBox.src = 'images/th/' + imageInfo["filename"];
+}
+
+function postChangeImageData(imageInfo, elevation) {
+    if (imageInfo === undefined)
+        imageInfo = getImage(currentPictureIndex);
+    var filename = imageInfo.filename;
+
+    if (elevation === undefined)
+        elevation = parseInt(document.getElementById("htmlEditHeight").value);
+    if (!isNaN(parseFloat(elevation))) {
+        var r = new XMLHttpRequest();
+        r.open("GET", siteURL + "../OrangeProcessing/__editImage.php?noClient=" + siteData.noClient + "&noSite=" + siteData.noSite + "&dateLivrable=" + siteData.dateLivrable + "&img=" + encodeURIComponent(filename) + "&height=" + elevation, true);
+        r.onreadystatechange = function () {
+            if (r.readyState != 4 || r.status != 200) return;
+            console.log(r.responseText);
+        };
+        r.send();
+        imageInfo.alt += (elevation - imageInfo.elevation);
+        imageInfo.elevation = elevation;
+        updatePlotsElevation();
+        setImageInfo(imageInfo, false);
+    }
+    else alert("La hauteur n'a pas pu être recalculée.");
+}
+function getImageAnnotations(imageName) {
+    if (!annotations) return;
+    var imageAnnotations = new Array();
+    for (var i = 0; i < annotations.length; i++) {
+        if (annotations[i].image == imageName) {
+            imageAnnotations.push(annotations[i]);
+        }
+    }
+    return imageAnnotations;
+}
+function getAnnotationColor(annotations) {
+    var maxLevel = 0;
+    for (var a = 0; a < annotations.length; a++) {
+        maxLevel = Math.max(maxLevel, annotations[a].annotationsType);
+    }
+    return colorTypeAnnotation[maxLevel];
+}
+function makeImageInfoTable(imageInfo, bEditable) {
+    function hyphenateDate(d) {
+        d = "" + d;
+        return d.substring(0, 4) + "-" + d.substring(4, 6) + "-" + d.substring(6, 8);
+    }
+
+    var htmlEditHeight = parseInt(imageInfo["elevation"]);
+    var htmlSaveButton = "";
+    if (bEditable) {
+        htmlEditHeight = "<input style='width:16px;font-size:10px' value='" + htmlEditHeight + "' id='htmlEditHeight'>";
+        htmlSaveButton = "<a href='javacript:void(0);' onclick='postChangeImageData();'>Enregistrer</a>";
+    }
+    var imageAnnotations = getImageAnnotations(imageInfo["filename"]);
+    var htmlAnnotation = "";
+    if (imageAnnotations.length > 0) {
+        htmlAnnotation = " <div class='annotationWarning " + getAnnotationColor(imageAnnotations) + "' title='Annotations :";
+        for (var a = 0; a < imageAnnotations.length; a++) {
+            htmlAnnotation += imageAnnotations[a].annotationsComments.replace(/'/g, "&quot;") + "\n";
+        }
+        htmlAnnotation += " '>" + imageAnnotations.length + "</div>";
+    }
+    return "<table>"
+        + "<colgroup><col style='width:40px'><col style='width:32px'><col style='width:40px'><col></colgroup>"
+        + "<tbody><tr><th>Fichier</th><td colspan='3'>" + imageInfo["filename"] + htmlAnnotation + "</td></tr>"
+        + "<tr><th>H<sup>t</sup></th><td><b>" + htmlEditHeight + "</b>m</td><th>Vue à</th><td><b>" + parseInt(imageInfo["bearingFOV"]) + "</b>&deg;</td></tr>"
+        + "<tr><th><span title='par rapport au support'>Posit&deg;</span></th><td colspan='3'><b>" + parseInt(imageInfo["bearing"]) + "</b>&deg;</td></tr>"
+        + "<tr><th colspan='2'>Date Insp.</th><td colspan='3'><b>" + hyphenateDate(siteData["dateLivrable"]) + "</b></td></tr>"
+        + "</table>" + htmlSaveButton;
+}
+
+function setImageInfo(imageInfo, bEditable) {
+    var inspLegend = document.getElementById("inspLegend");
+    inspLegend.innerHTML = makeImageInfoTable(imageInfo, bEditable);
+}
+
+function setMapPlot(imageInfo) {
+    var navigatorPlot = document.getElementById("navigatorPlot");
+    var navigatorImg = document.getElementById("navigatorImg");
+    var thImageSizeX = parseInt(navigatorImg.offsetWidth);
+    var ratio = thImageSizeX / siteData.imgMasseWidth;
+    var navPosX = parseFloat(imageInfo["posX"] + siteData.planMasseCentreX) * ratio;
+    var navPosY = parseFloat(imageInfo["posY"] + siteData.planMasseCentreY) * ratio; /*+ offsetYPlanImg*/;
+    navigatorPlot.style.left = parseInt(navPosX - 10) + "px";
+    navigatorPlot.style.top = parseInt(navPosY - 10) + "px";
+}
+
+function showInspector(index) {
+    var imageInfo = getImage(index);
+    document.body.scrollLeft = document.documentElement.scrollLeft = document.body.scrollTop = document.documentElement.scrollTop = 0;
+    document.body.style.overflow = "hidden";
+    setImageInfo(imageInfo, false);
+    setMapPlot(imageInfo);
+    setThumbView(imageInfo);
+    document.getElementById("zoomCursor").value = 0;
+    currentPictureIndex = index;
+    svgImg.setAttributeNS(NSxlink, 'href', "img/loading-gallery.gif");
+    setTimeout(function () {
+        document.getElementById("divImgLoading").style.display = "block";
+        document.getElementById("imgLoading").src = "images/" + imageInfo["filename"];
+    }, 10);
+
+    updateZoom(0);
+}
+
+function updateAnnotationFrames() {
+    var imageInfo = getImage(currentPictureIndex);
+    removeAnnotationFrames();
+    if (annotations) {
+        for (var i = 0; i < annotations.length; i++) {
+            if (annotations[i].deleted) continue;
+            if (annotations[i].hidden) continue;
+            if (annotations[i].image == imageInfo["filename"])
+                addAnnotationFrame(annotations[i], true);
+        }
+    }
+}
+
+function removeAnnotationFrames() {
+    for (var i = 0; i < selectionRectangles.length; i++) {
+        document.getElementById("svgCanvas").removeChild(selectionRectangles[i]);
+    }
+    selectionRectangles = [];
+}
+
+var libTypeAnnotation = ["Note", "Remarque", "Question", "Point d'attention", "Defaut"];
+var colorTypeAnnotation = ["green", "green", "blue", "orange", "red"];
+function getLibTypeAnnotation(type) {
+    return libTypeAnnotation[type];
+}
+
+function activateAnnotationFrameEvents(selRect) {
+    selRect.addEventListener("mouseover", annotationMouseOver);
+    selRect.addEventListener("mouseout", hide);
+    selRect.addEventListener("click", annotationEdit);
+}
+
+function addAnnotationFrame(annotation, bCreateEvents) {
+    var svgNS = "http://www.w3.org/2000/svg"; // todo read NS from svgCanvas
+    var selRect = document.createElementNS(svgNS, "rect");
+    var x1y1 = imageToScreenPosition(annotation.annotationX1, annotation.annotationY1);
+    var x2y2 = imageToScreenPosition(annotation.annotationX2, annotation.annotationY2);
+
+    selRect.setAttributeNS(null, "x", x1y1.x);
+    selRect.setAttributeNS(null, "y", x1y1.y);
+    selRect.setAttributeNS(null, "width", x2y2.x - x1y1.x);
+    selRect.setAttributeNS(null, "height", x2y2.y - x1y1.y);
+    selRect.setAttributeNS(null, "stroke-opacity", 0.5);
+    selRect.setAttributeNS(null, "stroke-width", appParams.annotationStrokeWidth);
+    selRect.setAttributeNS(null, "stroke", "rgb(255,0,0)");
+    selRect.setAttributeNS(null, "fill", "none");
+    selRect.noAnnotation = annotation.noAnnotation;
+    selRect.data = "<span class='light'>Date</span> " + annotation["Date"] + "<br>\n"
+        + "<span class='light'>Auteur</span> " + annotation["nomPrenom"] + "<br>\n"
+        + "<span class='light'>Type de Note</span> " + getLibTypeAnnotation(annotation["annotationsType"]) + "<br>\n"
+        + "<span class='light'>Note</span> " + annotation["annotationsComments"] + "<br>\n";
+
+    if (bCreateEvents !== false)
+        activateAnnotationFrameEvents(selRect)
+    document.getElementById("svgCanvas").appendChild(selRect);
+    selectionRectangles.push(selRect);
+}
+
+function getAnnotation(noAnnotation) {
+    for (var i = 0; i < annotations.length; i++) {
+        if (annotations[i].noAnnotation == noAnnotation)
+            return annotations[i];
+    }
+    return null;
+}
+
+function annotationEdit(event) {
+    document.getElementById("ajoutAnnotationIcon").style.background = "lightgray";
+    var f = document.getElementById("annotationsForm");
+    var selRect = selectionRectangles[selectionRectangles.length - 1];
+    if (event && event.target && event.target.noAnnotation > 0) {
+        selRect = event.target;
+        var annotation = getAnnotation(event.target.noAnnotation);
+        f.elements["noAnnotation"].value = annotation["noAnnotation"];
+        f.elements["annotationsFormDate"].value = annotation["Date"];
+        f.elements["annotationsFormAuteur"].value = annotation["nomPrenom"];
+        f.elements["annotationsType"].value = annotation["annotationsType"];
+        f.elements["annotationsComments"].value = annotation["annotationsComments"];
+    }
+    else
+        f.elements["noAnnotation"].value = 0;
+
+    var x = parseInt(selRect.getAttribute("x"));
+    var y = parseInt(selRect.getAttribute("y"));
+    var w = parseInt(selRect.getAttribute("width"));
+    var h = parseInt(selRect.getAttribute("height"));
+
+    var x1y1 = screenToImagePosition(x, y);
+    var x2y2 = screenToImagePosition(x + w, y + h);
+    f.elements["annotationX1"].value = x1y1.x;
+    f.elements["annotationY1"].value = x1y1.y;
+    f.elements["annotationX2"].value = x2y2.x;
+    f.elements["annotationY2"].value = x2y2.y;
+
+    document.getElementById("annotations").style.display = "block";
+}
+
+function annotationMouseOver(event) {
+    var e = event.target;
+    var tooltip = document.getElementById("tooltip");
+    var tooltipimg = document.getElementById("tooltipimg");
+    var tooltipdiv = document.getElementById("tooltipdiv");
+    if (tooltip) {
+        tooltip.style.display = "block";
+
+        var pos = getMouseCursorPosition(event, svgImg);
+
+        tooltip.style.top = pos.y + "px";
+        tooltip.style.left = (pos.x - 10) + "px";
+        tooltipimg.src = '';
+        tooltipdiv.innerHTML = "<div style='padding:8px;'>" + event.target.data + "<div>";
+    }
+}
+
+//  events
+function onLoadImageLoad(imgLoading) {
+    svgImg.setAttributeNS(NSxlink, 'href', imgLoading.src);
+    document.getElementById("divImgLoading").style.display = "none";
+}
+
+function getMouseCursorPosition(event, elt) {
+    var posX = (event.offsetX ? (event.offsetX) : event.pageX - elt.offsetLeft);
+    var posY = (event.offsetY ? (event.offsetY) : event.pageY - elt.offsetTop);
+    return { x: posX, y: posY };
+}
+
+function dblClickImageInsp(event) {
+    var pos = getMouseCursorPosition(event, svgImg);
+    var imgPos = screenToImagePosition(pos.x, pos.y);
+    updateZoom(100);
+    var viewSize = getSVGDimensions();
+    setImgPos(-imgPos.x + viewSize.w / 2, -imgPos.y + viewSize.h / 2);
+}
+
+function onMouseDownImageInsp(event) {
+    event.preventDefault();
+    bMouseDown = true;
+    var pos = getMouseCursorPosition(event, svgImg);
+    mouseLastX = pos.x;
+    mouseLastY = pos.y;
+
+    if (bSetAnnotation) {
+        if (!bSettingAnnotation) {
+            var imgPos = screenToImagePosition(pos.x, pos.y);
+            addAnnotationFrame({ "annotationX1": imgPos.x, "annotationY1": imgPos.y, "annotationX2": imgPos.x, "annotationY2": imgPos.y }, false);
+            bSettingAnnotation = true;
+        }
+        else { // 2eme clic = fin de selection
+            bSetAnnotation = bSettingAnnotation = false;
+            var selRect = selectionRectangles[selectionRectangles.length - 1];
+            annotationEdit();
+            activateAnnotationFrameEvents(selRect)
+        }
+    }
+
+}
+
+function closeAnnotation() {
+    document.getElementById("annotations").style.display = "none";
+}
+
+function onMouseMoveImageInsp(event) {
+    if (bMouseDown) {
+        var pos = getMouseCursorPosition(event, svgImg);
+        var dx = pos.x - mouseLastX;
+        var dy = pos.y - mouseLastY;
+        var imgPos = getImgPos();
+        setImgPos(imgPos.x + dx, imgPos.y + dy);
+        mouseLastX = pos.x;
+        mouseLastY = pos.y;
+    }
+
+    if (bSettingAnnotation && selectionRectangles.length > 0) {
+        var pos = getMouseCursorPosition(event, svgImg);
+        var dx = pos.x - mouseLastX - appParams.annotationStrokeWidth;
+        var dy = pos.y - mouseLastY - appParams.annotationStrokeWidth;
+        var selRect = selectionRectangles[selectionRectangles.length - 1];
+        if (dx > 0)
+            selRect.setAttributeNS(null, "width", dx);
+        if (dy > 0)
+            selRect.setAttributeNS(null, "height", dy);
+    }
+
+}
+function onMouseUpImageInsp(event) {
+    bMouseDown = false;
+}
+
+function onBoxBodyClick(event) {
+    var img = document.getElementById("thumbnailVueBox");
+    var pos = getMouseCursorPosition(event, img);
+    var imgProps = getImageDisplaySize();
+    var boxThumbBody = document.getElementById("boxThumbBody");
+    var thW = parseInt(boxThumbBody.clientWidth);
+    var thH = parseInt(boxThumbBody.clientHeight);
+    var svgDimensions = getSVGDimensions();
+    var realImgPosX = parseInt(pos.x / thW * imgProps.w - svgDimensions.w / 2);
+    var realImgPosY = parseInt(pos.y / thH * imgProps.h - svgDimensions.h / 2);
+    setImgPos(-realImgPosX, -realImgPosY);
+}
+
+// --- sets
+function setImgPos(x, y) {
+    x = Math.min(0, x);
+    y = Math.min(0, y);
+
+    var svgDimensions = getSVGDimensions();
+    var imgDispSize = getImageDisplaySize();
+    x = Math.max(x, svgDimensions.w - imgDispSize.w);
+    y = Math.max(y, svgDimensions.h - imgDispSize.h);
+
+    if (imgDispSize.w < svgDimensions.w)
+        x = (svgDimensions.w - imgDispSize.w) / 2;
+    if (imgDispSize.h < svgDimensions.h)
+        y = (svgDimensions.h - imgDispSize.h) / 2;
+
+    svgImg.setAttribute('x', parseInt(x) + "px");
+    svgImg.setAttribute('y', parseInt(y) + "px");
+    updateFrustum(document.getElementById("zoomCursor").value);
+
+    updateAnnotationFrames();
+}
+
+// --- gets
+function getImageNaturalSize() {
+    if (currentPictureIndex === null)
+        return { "w": 6000, "h": 4000 };
+    else {
+        var image = getImage(currentPictureIndex);
+        return { "w": image.width, "h": image.height };
+    }
+}
+function getImageDisplaySize() {
+    return { "w": parseInt(svgImg.getAttribute("width")), "h": parseInt(svgImg.getAttribute("height")) };
+}
+function getSVGDimensions() {
+    var svgInspector = document.getElementById("svgCanvas");
+    return {
+        "w": parseInt(svgInspector ? svgInspector.clientWidth : null),
+        "h": parseInt(svgInspector ? svgInspector.clientHeight : null)
+    };
+}
+function getImgPos() {
+    var x = svgImg.getAttribute('x');
+    var y = svgImg.getAttribute('y');
+    return { "x": parseInt(x), "y": parseInt(y) };
+}
+
+function getImageNameFromURL(url) {
+    return url.split('/')[url.split('/').length - 1];
+}
+
+function getImage(index) {
+    if (metadata && index < metadata["images"].length)
+        return (metadata["images"][index]);
+}
+
+function getImageData(imgName) {
+    var url = getImageNameFromURL(imgName);
+    var n = data.length;
+    for (var i = 0; i < n; i++) {
+        if (getImageNameFromURL(data[i]["filename"]) == url)
+            return data[i];
+    }
+    return null;
+}
+function mouseWheelHandler(e) {
+    var e = window.event || e; // old IE
+    var delta = Math.max(-1, Math.min(1, (e.wheelDelta || -e.detail)));
+    var elt = document.getElementById("zoomCursor");
+    elt.value = parseInt(elt.value) + delta * 5;
+
+    var imageNaturalSize = getImageNaturalSize();
+    var imageDisplaySize = getImageDisplaySize();
+    var zoomRatio = imageNaturalSize.w / imageDisplaySize.w;
+
+    var pos = getMouseCursorPosition(event, svgImg);
+    var mouseScreenPos = screenToImagePosition(pos.x, pos.y);
+
+    updateZoom(elt.value);
+
+    var newMouseScreenPos = screenToImagePosition(pos.x, pos.y);
+    var dx = (newMouseScreenPos.x - mouseScreenPos.x) / zoomRatio;
+    var dy = (newMouseScreenPos.y - mouseScreenPos.y) / zoomRatio;
+
+    var offsetImage = getImgPos();
+    setImgPos(offsetImage.x + dx, offsetImage.y + dy);
+}
+function editImageData(boxName) {
+    var imageInfo = getImage(currentPictureIndex);
+    setImageInfo(imageInfo, true);
+}
+function ajoutAnnotation() {
+    bSetAnnotation = true;
+    document.getElementById("ajoutAnnotationIcon").style.background = "yellow";
+
+}
+function toggleBox(boxName) {
+    var e = document.getElementById(boxName);
+    if (e) {
+        if (e.style.display == "block") e.style.display = "none";
+        else e.style.display = "block";
+    }
+}
+function closeInspector(e) {
+    document.getElementById("picInspector").style.display = "none";
+    svgImg.setAttributeNS(NSxlink, 'href', "img/loading-gallery.gif");
+    svgImg = null;
+
+    document.body.style.overflow = "auto";
+
+    if (!e) e = window.event;
+    if (e.ctrlKey) {
+        var r = new XMLHttpRequest();
+        r.open("GET", siteURL + "../tools/OrangeProcessing/__removeImage.php?noClient=" + siteData.noClient + "&noSite=" + siteData.noSite + "&dateLivrable=" + siteData.dateLivrable + "&img=" + encodeURIComponent(getImage(currentPictureIndex).filename), true);
+        r.onreadystatechange = function () {
+            if (r.readyState != 4 || r.status != 200) return;
+            console.log(r.responseText);
+        };
+        r.send();
+    }
+}
+
+function updatePlotsMasse() {
+    var imagesMetadata = metadata["images"];
+    var divPlanMasse = document.getElementById("divPlanMasse");
+    // remove plots
+    for (var i = 0; i < imagesMetadata.length; i++) {
+        var elt = document.getElementById("plot" + i);
+        if (elt) divPlanMasse.removeChild(elt);
+        var elt = document.getElementById("fov" + i);
+        if (elt) divPlanMasse.removeChild(elt);
+    }
+    createPlotsMasse();
+}
+
+function createPlotsMasse() {
+    function getBearingFromLatLon(a, b) {
+        var ax = a.x / 180 * Math.PI;
+        var ay = -a.y / 180 * Math.PI;
+        var bx = b.x / 180 * Math.PI;
+        var by = -b.y / 180 * Math.PI;
+
+        var y = Math.sin(by - ay) * Math.cos(bx);
+        var x = Math.cos(ax) * Math.sin(bx) - Math.sin(ax) * Math.cos(bx) * Math.cos(by - ay);
+        var bearing = (((180 / Math.PI * (Math.atan2(y, x)) - 90 + 360) % 360) + 180) % 360;
+        return bearing;
+    }
+    function getDistanceFromLatLon(a, b) {
+        var R = 6371000; // m
+        var dLat = (b.y - a.y) / 180 * Math.PI;
+        var dLon = (b.x - a.x) / 180 * Math.PI;
+        var lat1 = (a.y) / 180 * Math.PI;
+        var lat2 = (b.y) / 180 * Math.PI;
+        var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(lat1) * Math.cos(lat2);
+        var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
+    }
+    // convert position to pixels
+    function positionToScreenPosition(screenScale, x, y) {
+        var posX = Math.min(siteData.imgMasseWidth - 20, Math.max(0, siteData.planMasseCentreX + x)) / screenScale + offsetXPlanImg;
+        var posY = Math.min(siteData.imgMasseHeight - 20, Math.max(20, siteData.planMasseCentreY + y)) / screenScale + offsetYPlanImg;
+        return { "x": posX, "y": posY };
+    }
+
+    var divPlanMasse = document.getElementById("divPlanMasse");
+    var imgPlanMasse = document.getElementById("imgPlanMasse");
+    var offsetXPlanImg = parseInt(imgPlanMasse.offsetLeft);
+    var offsetYPlanImg = parseInt(imgPlanMasse.offsetTop);
+    var imagesMetadata = metadata["images"];
+    var siteMetadata = metadata["site"];
+    var sitePos = { "x": siteMetadata.siteLon, "y": siteMetadata.siteLat };
+    var GUND = siteData.gund || 53; // geoid ondulation. todo : pour bien faire il faut le relever dans une table en fonction de la lat/lon
+
+    var screenScale = imgPlanMasse.naturalHeight / imgPlanMasse.height;
+    if (imgPlanMasse.naturalHeight == 0) {
+        screenScale = 1;
+        imgPlanMasse.style.height = "auto";
+    }
+    var plotsLocation = [];
+
+    for (var i = 0; i < imagesMetadata.length; i++) {
+        var image = imagesMetadata[i];
+        if (!image.deleted) {
+
+            var imgPos = { "x": image.lon, "y": image.lat, "z": image.alt };
+            image.distance = getDistanceFromLatLon(imgPos, sitePos);
+            image.bearing = getBearingFromLatLon(sitePos, imgPos);
+            if (image.bearingFOV == undefined)
+                image.bearingFOV = (180 + image.bearing + siteData.planMasseNorth) % 360;
+            image.elevation = imgPos.z - GUND - siteData.planElevationAltiBase;
+
+            var distPixels = image.distance * siteData.planMasseScalePixels / siteData.planMasseScaleMetres;
+            var radBearing = (90 - image.bearing - siteData.planMasseNorth) * Math.PI / 180;
+
+            image.posX = parseInt(+ Math.cos(radBearing) * distPixels);
+            image.posY = parseInt(- Math.sin(radBearing) * distPixels);
+            var pos = positionToScreenPosition(screenScale, image.posX, image.posY);
+
+            var loops = 0;
+            do {
+                var positionClear = true;
+                for (var pl = 0; pl < plotsLocation.length; pl++) {
+                    if (plotsLocation[pl].x >= pos.x - 10 && plotsLocation[pl].x <= pos.x + 10 && plotsLocation[pl].y >= pos.y - 10 && plotsLocation[pl].y <= pos.y + 10) {
+
+                        var candidatePosX = parseInt(Math.cos(radBearing) * screenScale * (distPixels + 21 * loops));
+                        var candidatePosY = parseInt(- Math.sin(radBearing) * screenScale * (distPixels + 21 * loops));
+
+                        var altpos = positionToScreenPosition(screenScale, candidatePosX, candidatePosY);
+
+                        if (altpos.x > 20 && altpos.x < imgPlanMasse.width - 20) {
+                            pos.x = altpos.x;
+                            positionClear = false;
+                        }
+                        if (altpos.y > 20 && altpos.y < imgPlanMasse.height - 20) {
+                            pos.y = altpos.y;
+                            positionClear = false;
+                        }
+                    }
+                }
+                loops++;
+            }
+            while (!positionClear && loops < 40);
+            plotsLocation.push({ "x": pos.x, "y": pos.y });
+
+            var imageAnnotations = getImageAnnotations(image["filename"]);
+
+            var iDiv = document.createElement('div');
+            iDiv.id = 'plot' + i;
+            iDiv.className = "plot " + getAnnotationColor(imageAnnotations);
+            iDiv.style.top = (pos.y - 12) + "px";
+            iDiv.style.left = (pos.x - 12) + "px";
+            iDiv.addEventListener("mouseout", hide);
+            iDiv.addEventListener("mouseover", mo);
+            iDiv.addEventListener("click", initInspector);
+            iDiv.data = { "index": i, "url": image["filename"], "bearing": image.bearing, "bearingFOV": image.bearingFOV, "elevation": image.elevation };
+            if (imageAnnotations.length > 0)
+                iDiv.innerText = imageAnnotations.length;
+            divPlanMasse.appendChild(iDiv);
+
+            iDiv = document.createElement('div');
+            iDiv.appendChild(fovImage.cloneNode(true));
+            iDiv.id = 'fov' + i;
+            iDiv.className = "imgPlot";
+            iDiv.style = "left:" + (pos.x - 100) + "px; top:" + (pos.y - 100) + "px;-ms-transform: rotate(" + image.bearingFOV + "deg);-webkit-transform: rotate(" + image.bearingFOV + "deg);transform: rotate(" + image.bearingFOV + "deg);";
+            divPlanMasse.appendChild(iDiv);
+        }
+    }
+}
+
+function updatePlotsElevation() {
+    var imagesMetadata = metadata["images"];
+    var divPlanElevation = document.getElementById("divPlanElevation");
+    // remove plots
+    for (var i = 0; i < imagesMetadata.length; i++) {
+        var elt = document.getElementById("plotV" + i);
+        if (elt) divPlanElevation.removeChild(elt);
+    }
+    createPlotsElevation(false);
+}
+
+function createPlotsElevation(hideAfterCreate) {
+    var divPlanElevation = document.getElementById("divPlanElevation");
+    var imgPlanElevation = document.getElementById("imgPlanElevation");
+    if (!divPlanElevation) return;
+    var visibility = divPlanElevation.style.display;
+    divPlanElevation.style.display = 'block';
+    var offsetXPlanImg = parseInt(imgPlanElevation.offsetLeft);
+    var offsetYPlanImg = parseInt(imgPlanElevation.offsetTop);
+    var imagesMetadata = metadata["images"];
+
+    var screenScale = parseInt(imgPlanElevation.naturalHeight) / parseInt(imgPlanElevation.height);
+    if (imgPlanElevation.naturalHeight == 0) {
+        screenScale = 1;
+        imgPlanElevation.style.height = "auto";
+    }
+    var plotsLocation = [];
+    var heightPixelsTower = (siteData.planElevationCentreY - siteData.planElevationSommetY);
+    if (heightPixelsTower == 0) heightPixelsTower = siteData.imgElevationHeight / 2;
+    var echelle = heightPixelsTower / (siteData.planElevationAltiTop - siteData.planElevationAltiBase)
+
+    for (var i = 0; i < imagesMetadata.length; i++) {
+        var image = imagesMetadata[i];
+        if (!image.deleted) {
+
+            var hauteurPixels = image.elevation * echelle;
+            var radBearing = (90 - image.bearing - siteData.planElevationOrientation) * Math.PI / 180;
+
+            // convert to pixels
+            var XtoZratio = 2;
+            var offsetXPixels = Math.cos(radBearing) * image.distance * echelle / XtoZratio;
+            var posX = Math.min(siteData.imgElevationWidth - 20, Math.max(0, siteData.planElevationCentreX + offsetXPixels)) / screenScale + offsetXPlanImg;
+            var posY = Math.min(siteData.imgElevationHeight - 20, Math.max(20, siteData.planElevationCentreY - hauteurPixels)) / screenScale + offsetYPlanImg;
+
+            do {
+                var positionClear = true;
+                for (var pl = 0; pl < plotsLocation.length; pl++) {
+                    if (plotsLocation[pl].x >= posX - 10 && plotsLocation[pl].x <= posX + 10 && plotsLocation[pl].y >= posY - 10 && plotsLocation[pl].y <= posY + 10) {
+						debugger;
+						var myAlt = image.alt;
+						var toAlt = imagesMetadata[plotsLocation[pl].index].alt;
+						
+                        if( myAlt<toAlt) {
+							posY += 20;
+						} else if(myAlt == toAlt) {
+							posX += 20;
+						} else {
+							plotsLocation[pl].y -= 20;
+						}
+                        positionClear = false;
+                    }
+                }
+            }
+            while (!positionClear && posY < parseInt(imgPlanElevation.height));
+            plotsLocation.push({ "x": posX, "y": posY, "index": i });
+
+            var imageAnnotations = getImageAnnotations(image["filename"]);
+
+            var iDiv = document.createElement('div');
+            iDiv.id = 'plotV' + i;
+            iDiv.className = "plot " + getAnnotationColor(getImageAnnotations(image.filename));
+            iDiv.style.top = (posY - 12) + "px";
+            iDiv.style.left = (posX - 12) + "px";
+            iDiv.addEventListener("mouseout", hide);
+            iDiv.addEventListener("mouseover", mo);
+            iDiv.tabIndex = i;
+            iDiv.addEventListener("keypress", onKeyPressElevationView, true);
+            iDiv.addEventListener("click", initInspector);
+            if (imageAnnotations.length > 0)
+                iDiv.innerText = imageAnnotations.length;
+            iDiv.data = { "index": i, "url": image.filename, "bearing": image.bearing, "bearingFOV": image.bearingFOV, "elevation": image.elevation };
+            divPlanElevation.appendChild(iDiv);
+
+            /* todo when i'll be able to adjust FOV automatically & manually : show elevation fov
+            var bearingFOV = 90;
+            iDiv = document.createElement('div');
+            iDiv.appendChild( fovImage.cloneNode(true));
+            iDiv.id = 'fov' + i;
+            iDiv.className = "imgPlot";
+            iDiv.style = "left:" + (posX-100) + "px; top:" + (posY-100) + "px;-ms-transform: rotate("+bearingFOV+"deg);-webkit-transform: rotate("+bearingFOV+"deg);transform: rotate("+bearingFOV+"deg);";
+            divPlanElevation.appendChild(iDiv);
+            */
+        }
+    }
+    divPlanElevation.style.display = (hideAfterCreate ? "none" : visibility);
+}
+
+function createPlots(showPlanMasse) {
+    createPlotsMasse(showPlanMasse);
+    createPlotsElevation(showPlanMasse);
+}
+
+function mo() {
+    var e = event.target;
+    var data = e.data;
+    e.focus();
+
+    hover();
+
+    var tooltip = document.getElementById("tooltip");
+    var tooltipimg = document.getElementById("tooltipimg");
+    var tooltipdiv = document.getElementById("tooltipdiv");
+    if (tooltip) {
+        tooltip.style.display = "block";
+        var posy = (parseInt(e.style.top) - 140);
+        if (posy < 0) posy = (parseInt(e.style.top) + 20);
+        tooltip.style.top = posy + "px";
+        tooltip.style.left = (parseInt(e.style.left) + 25) + "px";
+        tooltipimg.src = (relativePathToImages||"") + 'images/th/' + data.url;
+        var imgName = getImageNameFromURL(data.url);
+        tooltipdiv.innerHTML = imgName + "<br>vue : " + parseInt(data.bearingFOV - siteData.planMasseNorth) + "&deg;, H<sup>t</sup> : " + parseInt(data.elevation) + "m<br>pos&deg; : " + parseInt(data.bearing) + "&deg;";
+    }
+}
+
+function hover() {
+    var elt = event.target;
+    var id = document.getElementById("img" + elt.data.index);
+    if (id) {
+        var url = id.src;
+        if (id.src.indexOf("-hover") == -1)
+            id.src = url.substring(0, url.length - 4) + "-hover.png";
+    }
+}
+function hide(event) {
+    if (!event) return;
+    var tooltip = document.getElementById("tooltip");
+    tooltip.style.display = "none";
+    var id = event.target;
+    if (id && id.src) {
+        var url = id.src;
+        id.src = url.replace("-hover", "");
+    }
+    bMouseDown = false;
+}
+function showPlan(bShowPlanMasse) {
+    var divPlanMasse = document.getElementById("divPlanMasse");
+    divPlanMasse.style.display = (bShowPlanMasse ? "block" : "none");
+    var divPlanElevation = document.getElementById("divPlanElevation");
+    divPlanElevation.style.display = (!bShowPlanMasse ? "block" : "none");
+}
+function showAnnotationList() {
+    if (annotations && annotations.length > 0) {
+        document.getElementById("divListImages").style.display = document.getElementById("divPlanMasse").style.display = document.getElementById("divPlanMasse").style.display = "none";
+        var html = "<table><tr><th class='cool'>Vue</th><th class='cool'>Type</th><th class='cool'>Auteur</th><th class='cool'>Date</th><th class='cool'>Annotation</th></tr><tr>";
+        var index = 0;
+        var imagesMetadata = metadata["images"];
+
+        for (var i = 0; i < annotations.length; i++) {
+            var annotation = annotations[i];
+            for (var j = 0; j < imagesMetadata.length; j++) {
+                if (imagesMetadata[j].filename == annotation.image) {
+                    index = j;
+                    break;
+                }
+            }
+
+            var winSize = 300;
+            html += "<tr>"
+                + "<td><a href='javascript:initInspector( event, " + index + ");'><img src='images/th/" + annotation.image + "'></a></td>"
+                + "<td>"
+                + "<a href='javascript:initInspector( event, " + index + ");'>"
+                + "<div style='width:" + winSize + "px;height:" + winSize + "px;background-image:url(images/" + annotation.image + ");background-position:" + (-annotation.annotationX1) + "px " + (-annotation.annotationY1) + "px;'></div>"
+                + "</a></td>"
+                + "<td style='color:" + getAnnotationColor([annotation]) + "'>" + getLibTypeAnnotation(annotation.annotationsType) + "</td>"
+                + "<td>" + annotation.nomPrenom + "</td>"
+                + "<td>" + annotation.Date + "</td>"
+                + "<td>" + annotation.annotationsComments + "</td>"
+                + "</tr>";
+        }
+        html += "</table>";
+        var div = document.getElementById("divListAnnotations");
+        div.style.display = "block";
+        div.innerHTML = html;
+    }
+}
+function zoomPlanMasse() {
+    var span = document.getElementById("spanPlanMasseZoom");
+    var img = document.getElementById("imgPlanMasse");
+    if (span) {
+        if (img.style.height == "auto") {
+            span.innerHTML = "zoom";
+            img.style.height = "100%";
+        }
+        else {
+            span.innerHTML = "unzoom";
+            img.style.height = "auto";
+        }
+        updatePlotsMasse();
+    }
+}
+function onKeyPressElevationView(evt) {
+    evt = evt || window.event;
+    if (!evt.target || !evt.target.data) return;
+    var imageInfo = getImage(evt.target.data.index);
+    if (!imageInfo) return;
+    switch (evt.keyCode) {
+        case 43: // +
+        case 107: // +
+            postChangeImageData(imageInfo, imageInfo.elevation + 2);
+            break;
+        case 45: // -
+        case 109: // -
+            postChangeImageData(imageInfo, imageInfo.elevation - 2);
+            break;
+    }
+}
+
+function postAnnotation() {
+    var f = document.getElementById("annotationsForm");
+    f.elements["submitBtn"].disabled = true;
+    var params = "noClient=" + siteData.noClient + "&noSite=" + siteData.noSite + "&dateLivrable=" + siteData.dateLivrable;
+    params += "&noAnnotation=" + f.elements["noAnnotation"].value;
+    params += "&annotationsType=" + f.elements["annotationsType"].value;
+    params += "&annotationsComments=" + encodeURIComponent(f.elements["annotationsComments"].value);
+    params += "&annotationX1=" + f.elements["annotationX1"].value;
+    params += "&annotationY1=" + f.elements["annotationY1"].value;
+    params += "&annotationX2=" + f.elements["annotationX2"].value;
+    params += "&annotationY2=" + f.elements["annotationY2"].value;
+    params += "&image=" + encodeURIComponent(getImage(currentPictureIndex)["filename"]);
+    var r = new XMLHttpRequest();
+    r.open("GET", siteURL + "../tools/OrangeProcessing/__saveAnnotation.php?" + params, true);
+    r.onreadystatechange = function () {
+        if (r.readyState != 4 || r.status != 200) return;
+        f.elements["submitBtn"].disabled = false;
+        if (r.responseText.substring(0, 2) != "OK") {
+            alert(r.responseText);
+        }
+        else {
+            f.elements["noAnnotation"].value = parseInt(r.responseText.substring(3));
+            closeAnnotation();
+        }
+    };
+    r.send();
+
+    var newAnnotation = {
+        "Auteur": null,
+        "nomPrenom": "(moi-même)",
+        "Date": "(maintenant)",
+        "annotationsType": f.elements["annotationsType"].value,
+        "annotationsComments": f.elements["annotationsComments"].value,
+        "annotationX1": parseInt(f.elements["annotationX1"].value),
+        "annotationY1": parseInt(f.elements["annotationY1"].value),
+        "annotationX2": parseInt(f.elements["annotationX2"].value),
+        "annotationY2": parseInt(f.elements["annotationY2"].value),
+        "image": getImage(currentPictureIndex)["filename"],
+        "deleted": false,
+        "noAnnotation": f.elements["noAnnotation"].value
+    };
+    var annotation = getAnnotation(f.elements["noAnnotation"].value);
+    if (annotation)
+        annotation = newAnnotation;
+    else {
+        if (annotations == undefined)
+            var annotations = [];
+        else if (annotations.length == undefined)
+            var annotations = [];
+        annotations.push(newAnnotation);
+    }
+    updatePlotsMasse();
+    updatePlotsElevation();
+}
+function showAnnotations(bShow) {
+    if (!bShow) {
+        for (var i = 0; i < annotations.length; i++)
+            annotations[i].hidden = true;
+        removeAnnotationFrames();
+    }
+    else {
+        for (var i = 0; i < annotations.length; i++)
+            annotations[i].hidden = false;
+        updateAnnotationFrames();
+    }
+}
+function checkDDCISLoginStatus() {
+    var r = new XMLHttpRequest();
+    r.open("GET", siteURL + "../../__isLogged.php", true);
+    r.onreadystatechange = function () {
+        if (r.readyState != 4 || r.status != 200) return;
+        var rc = JSON.parse(r.responseText);
+        var div = document.getElementById("boxAnnotationBody");
+        if (rc.logged)
+            div.innerHTML = "<div class='a' onclick='ajoutAnnotation();'><div class='oneCharIcon' id='ajoutAnnotationIcon'>+</div> Nouvelle Annotation</div>";
+        else
+            div.innerHTML = "<a href='" + siteURL + "../../index.php' target='_blank'>Ouvrir une session DDCIS pour pouvoir éditer des annotations</a>";
+    };
+    r.send();
+    setTimeout(checkDDCISLoginStatus, 60 * 1000);
+}
+function resize() {
+    updatePlotsMasse();
+    updatePlotsElevation();
+    var elt = document.getElementById("zoomCursor");
+    if (elt) updateZoom(elt.value);
+}</script>
+</head>
+<body onload = "init();" onresize='resize();'>
+<div id='loading' style='width:100%; height:100%;background-color:white;opacity:0.7; text-align:center;vertical-align:center;position:absolute;top:0;left:0;z-index:1060;'>
+	<h1 style='padding-top:200px;'>Chargement en cours...</h1>
+</div>
+
+<div id='annotations' style='width:100%;height:100%;text-align:center;vertical-align:center;position:absolute;top:0;left:0;z-index:1060;display:none;background:white;'>
+	<div style='width:400px; height:400px;background:white;margin:auto;border:8px solid gray;margin-top:200px;'>
+		<form id='annotationsForm'>
+			<input type='hidden' name='noAnnotation' value='0'>
+			<input type='hidden' name='annotationX1' value=''>
+			<input type='hidden' name='annotationY1' value=''>
+			<input type='hidden' name='annotationX2' value=''>
+			<input type='hidden' name='annotationY2' value=''>
+			<table>
+			<tr>
+				<th>Date</th><td><input type='text' id='annotationsFormDate' value='' readonly></td>
+			</tr><tr>
+			<tr>
+				<th>Auteur</th><td><input type='text' id='annotationsFormAuteur' value='' readonly></td>
+			</tr><tr>
+				<th class='r'>Type d'annotation</th><td><select id='annotationsType'>
+					<option value='0'>Note</option>
+					<option value='1'>Remarque</option>
+					<option value='2'>Question</option>
+					<option value='3'>Point d'attention</option>
+					<option value='4'>Defaut</option>
+				</select>
+				</td>
+			</tr><tr>
+				<th class='r'>Notes</th>
+				<td><textarea id='annotationsComments' style='width:250px;height:200px;'></textarea></td>
+			</tr><tr>
+				<th></th><td><input type='button' value='Enregistrer en ligne' onclick='postAnnotation();' name='submitBtn'>
+				<input type='button' value='Fermer' onclick='closeAnnotation();'></td>
+			</tr></table>
+		</form>
+	</div>
+</div>
+
+<div id='divImgLoading' style='position:absolute;top:0;left:0;width:100%;height:100%;z-index:1050;display:none;text-align:center;'>
+	<img id='imgLoading' src='' onload='onLoadImageLoad(this);' style="margin-left:200px;max-height:100%;max-width:100%;" />
+</div>
+
+<div id='picInspector'>
+	<div id='ContentContainer'>
+		<div id="sidebar">
+			<!-- PHOTO BROWSE ELEMENTS -->
+			<div id="boxPanels" style="height:100vh; width:200px; float:left;">
+				<div id="boxPlan" class="box">
+					<div class="boxTitle"><div class='r a' onclick="toggleBox('boxPlanBody');">&#x25BC;</div>Plans</div>
+					<div class="boxBody" id="boxPlanBody" style='display:block;height:200px;'>
+						<div id='navigator'>
+							<img  id='navigatorImg' src='data/plan_masse-th.png' onclick="closeInspector();" alt='plan miniature' style='cursor:pointer;' />
+							<div id="navigatorPlot" class="plot green" style="left:0px; top:0px;"></div>
+						</div>
+					</div>
+				</div>
+
+				<div id="boxInfo" class="box">
+					<div class="boxTitle"><div class='r a' onclick="toggleBox('boxImageBody');">&#x25BC;</div><div class='r a' style='font-size:150%;line-height:0.8;' onclick="editImageData('boxImageBody');" title='Editer les informations'>&#9998;</div>Site / Prise de vue</div>
+					<div class="boxBody" id="boxImageBody" style='display:block; overflow-y:scroll;'>
+						<div><span style='color:gray;'>Site</span> <span id='siteLegend'></span></div>
+						<span id='inspLegend'></span>
+					</div>
+				</div>
+
+				<div id="boxThumb" class="box">
+					<div class="boxTitle"><div class='r a' onclick="toggleBox('boxThumbBody');">&#x25BC;</div>Vue</div>
+					<div class="boxBody" id="boxThumbBody" style='display:block;height:133px;overflow:hidden;position:relative;' onclick='onBoxBodyClick(event);'>
+						<div id='viewFrustum' style='border:2px solid yellow;position:absolute;width:196px;height:131px;left:0px;top:0px;'></div>
+						<img src='' id='thumbnailVueBox' alt='Vue réduite' style='width:200px;height:auto;' />
+					</div>
+				</div>
+
+				<div id="boxBrowse" class="box">
+					<div class="boxTitle"><div class='r a' onclick="toggleBox('boxBrowseBody');">&#x25BC;</div>Navigation</div>
+					<div class="boxBody" id="boxBrowseBody" style='display:block;height:100px;text-align:center;'>
+						<div>Prise de vue :
+						<input type='button' value='Préc.' onclick="goPrev();">
+						<input type='button' value='Suiv.' onclick="goNext();">
+						</div>
+						<div>
+							Zoom : <input type="range" value="0" max="200" min="0" step="1" id="zoomCursor" oninput="updateZoom(this.value);">
+						</div>
+						<img src='img/close_button.png' alt="Fermer" title="Fermer cette image et revenir au plan" onclick="closeInspector();">
+						<img src='img/expand_64px.png' alt="Zoom Max" title="Zoomer au maximum" onclick="updateZoom(100);">
+						<img src='img/shrink_64px.png' alt="Zoom Min" title="Dezoomer" onclick="updateZoom(0);">
+					</div>
+				</div>
+
+				<div id="boxAnnotation" class="box">
+					<div class="boxTitle"><div class='r a' onclick="toggleBox('boxAnnotationBody');">&#x25BC;</div><input type='checkbox' checked id='cbShowAnnotations' onchange='showAnnotations(this.checked);' style='padding:0;margin:0;vertical-align: bottom'> Annotations</div>
+					<div class="boxBody" id="boxAnnotationBody" style='display:block;'></div>
+				</div>
+			</div>
+		</div>
+
+		<div id="svgInspector">
+			<svg width="100%" height="100%" id='svgCanvas'>
+				<image id='inspImg' xlink:href="" x="0" y="0" height="100%" width="100%"  ondblclick='dblClickImageInsp(event);' onmousedown='onMouseDownImageInsp(event);' onmouseup='onMouseUpImageInsp(event);' onmousemove='onMouseMoveImageInsp(event);' onmouseout='onMouseUpImageInsp(event);' />
+				<g class="hoverGroup" onclick='goPrev();'>
+					<circle id='btnCommandPrev' fill="black" cx="32" cy="50%" r="32"/>
+					<text x="20" y="50%" fill="white" font-family="Arial" font-size="55" text-anchor="left" dx="-.1em" dy=".3em">&lt;</text>
+				</g>
+				<g class="hoverGroup" onclick='goNext();'>
+					<circle id='btnCommandNext' fill="black" cx="97%" cy="50%" r="32"/>
+					<text x="97%" y="50%" fill="white" font-family="Arial" font-size="55" text-anchor="left" dx="-.25em" dy=".3em">&gt;</text>
+				</g>
+				<g class="hoverGroup" onclick='closeInspector();'>
+					<circle id='btnCommandNext' fill="black" cx="97%" cy="3%" r="16"/>
+					<text x="97%" y="3%" fill="white" font-family="Arial" font-size="25" text-anchor="left" dx="-.25em" dy=".3em">x</text>
+				</g>
+			</svg>
+		</div>
+	</div>
+</div>
+
+<!-- GROUND PLANE ELEMENTS -->
+<div id='tooltip'>
+	<img src='' id='tooltipimg' />
+	<div id='tooltipdiv'></div>
+</div>
+
+<div id="mapBrowser" style='height:100%'>
+	<div id='documentMenuPanel'>
+		<div>
+			<div id='nomSite'></div>
+			<a href='javascript:displayListVues();'>
+				<div id='microVues'></div>
+			Liste des vues</a>
+		</div>
+		<div>
+			<a href='#' onclick='showAnnotationList(false);'>
+				<div id='divLienAnnotations'></div>
+			</a>
+		</div>
+		<div>
+			<div><a href='#' onclick='showPlan(true);'>
+				<img src='data/plan_masse-th.png'>
+			</a></div>
+			Plan de masse <a href="javascript:void(0);" id='spanPlanMasseZoom' onclick='zoomPlanMasse();'>zoom</a>
+
+		</div>
+		<div>
+			<a href='#' onclick='showPlan(false);'>
+				<div><img src='data/plan_elevation-th.png'></div>
+				Plan Elevation
+			</a>
+		</div>
+	</div>
+	<div id='divListImages' style='position:absolute;top:0;left:0;height:100%;text-align:center;display:none;padding-left:200px;border:0 none;' class='box'></div>
+	<div id='divListAnnotations' style='position:absolute;top:0;left:0;height:100%;text-align:center;display:none;padding-left:200px;border:0 none;'></div>
+	<div id='divPlanMasse' style='position:absolute;top:0;left:0;width:100%;height:100%;text-align:center;background:white;'>
+		<img id='imgPlanMasse' src='data/plan_masse.png' style='height:100%' />
+	</div>
+	<div id='divPlanElevation' style='position:absolute;top:0;left:0;width:100%;height:100%;text-align:center;;background:white;'>
+		<img id='imgPlanElevation' src='data/plan_Elevation.png' style='height:100%'/>
+	</div>
+</div>
+<!-- / GROUND PLANE ELEMENTS -->
+<script>
+	// init inspector
+	var svgInspector = document.getElementById("svgInspector");
+	if (svgInspector.addEventListener) {
+		svgInspector.addEventListener("mousewheel", mouseWheelHandler, false);
+		svgInspector.addEventListener("DOMMouseScroll", mouseWheelHandler, false);	//FF
+	}
+	else svgInspector.attachEvent("onmousewheel", mouseWheelHandler); // old IE
+	
+	var nbAnnotation = (annotations && annotations.length ? annotations.length : 0);
+	document.getElementById("divLienAnnotations").innerHTML = nbAnnotation + " Annotation"+(nbAnnotation>1?"s":"");
+	
+	document.onkeyup = function(evt) {
+		evt = evt || window.event;
+		if( document.getElementById("annotations").style.display == "block") return false;
+		if( document.getElementById("picInspector").style.display == "block") {
+			switch(evt.keyCode) {
+				case 27 : closeInspector( evt); break;
+				case 37 : goPrev(); break;
+				case 39 : goNext(); break;
+				case 45 :
+				case 109 :
+				case 189 :
+					updateZoom(0);
+					break;
+			}
+		}
+	};
+	checkDDCISLoginStatus();
+</script>
+</body>
+</html>
